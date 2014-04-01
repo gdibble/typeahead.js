@@ -918,6 +918,9 @@
             if (!o.input) {
                 $.error("input is missing");
             }
+            this.triggerRegex = o.triggerRegex;
+            this.triggerCharacter = o.triggerCharacter;
+            this.hasTrigger = !!(this.triggerRegex && this.triggerCharacter);
             onBlur = _.bind(this._onBlur, this);
             onFocus = _.bind(this._onFocus, this);
             onKeydown = _.bind(this._onKeydown, this);
@@ -956,6 +959,9 @@
                 this._managePreventDefault(keyName, $e);
                 if (keyName && this._shouldTrigger(keyName, $e)) {
                     this.trigger(keyName + "Keyed", $e);
+                    if (keyName === "left" || keyName === "right") {
+                        _.defer(_.bind(this._onInput, this));
+                    }
                 }
             },
             _onInput: function onInput() {
@@ -993,8 +999,12 @@
                 return trigger;
             },
             _checkInputValue: function checkInputValue() {
-                var inputValue, areEquivalent, hasDifferentWhitespace;
+                var inputValue, parsedInputValue, areEquivalent, hasDifferentWhitespace;
                 inputValue = this.getInputValue();
+                parsedInputValue = this._parseInputForTrigger();
+                if (this.hasTrigger) {
+                    inputValue = parsedInputValue ? parsedInputValue.completion : "";
+                }
                 areEquivalent = areQueriesEquivalent(inputValue, this.query);
                 hasDifferentWhitespace = areEquivalent ? this.query.length !== inputValue.length : false;
                 if (!areEquivalent) {
@@ -1002,6 +1012,51 @@
                 } else if (hasDifferentWhitespace) {
                     this.trigger("whitespaceChanged", this.query);
                 }
+            },
+            _findTriggerPosition: function findTriggerPosition() {
+                var inputValue, cursorPosition, index, charBeforeTrigger, substr, match;
+                inputValue = this.getInputValue();
+                cursorPosition = this._getCursorPosition();
+                index = inputValue.lastIndexOf(this.triggerCharacter, cursorPosition);
+                if (index === -1) {
+                    return -1;
+                }
+                charBeforeTrigger = inputValue.charAt(index - 1);
+                if (charBeforeTrigger && charBeforeTrigger !== " ") {
+                    return -1;
+                }
+                substr = inputValue.substring(index, cursorPosition);
+                match = substr.match(this.triggerRegex);
+                if (!match) {
+                    return -1;
+                }
+                if (substr.length > match[0].length) {
+                    return -1;
+                }
+                return index;
+            },
+            _parseInputForTrigger: function parseInputForTrigger() {
+                var triggerIndex, cursorPosition, inputValue, afterTrigger, match;
+                if (!this.hasTrigger) {
+                    return null;
+                }
+                inputValue = this.getInputValue();
+                triggerIndex = this._findTriggerPosition();
+                afterTrigger = inputValue.substring(triggerIndex);
+                match = afterTrigger.match(this.triggerRegex);
+                if (triggerIndex === -1 || !match) {
+                    return null;
+                } else {
+                    return {
+                        pre: inputValue.substring(0, triggerIndex),
+                        trigger: this.triggerCharacter,
+                        completion: match[0].substring(this.triggerCharacter.length),
+                        post: inputValue.substring(triggerIndex + match[0].length)
+                    };
+                }
+            },
+            _getCursorPosition: function getCursorPosition() {
+                return this.$input[0].selectionStart;
             },
             focus: function focus() {
                 this.$input.focus();
@@ -1019,11 +1074,36 @@
                 return this.$input.val();
             },
             setInputValue: function setInputValue(value, silent) {
+                var inputValue, newCursorPosition, hint;
+                inputValue = this._parseInputForTrigger();
+                if (inputValue) {
+                    newCursorPosition = (inputValue.pre + inputValue.trigger + value).length;
+                    value = inputValue.pre + inputValue.trigger + value + inputValue.post;
+                }
                 this.$input.val(value);
+                if (newCursorPosition) {
+                    this.setCursorPosition(newCursorPosition);
+                }
                 silent ? this.clearHint() : this._checkInputValue();
             },
+            setCursorPosition: function setCursorPosition(pos) {
+                var input, range;
+                input = this.$input[0];
+                if (input.setSelectionRange) {
+                    input.setSelectionRange(pos, pos);
+                } else if (input.createTextRange) {
+                    range = input.createTextRange();
+                    range.collapse(true);
+                    if (pos < 0) {
+                        pos = this.getInputValue().length + pos;
+                    }
+                    range.moveEnd("character", pos);
+                    range.moveStart("character", pos);
+                    range.select();
+                }
+            },
             resetInputValue: function resetInputValue() {
-                this.setInputValue(this.query, true);
+                !this.hasTrigger && this.setInputValue(this.query, true);
             },
             getHint: function getHint() {
                 return this.$hint.val();
@@ -1425,7 +1505,9 @@
             }).onSync("suggestionClicked", this._onSuggestionClicked, this).onSync("cursorMoved", this._onCursorMoved, this).onSync("cursorRemoved", this._onCursorRemoved, this).onSync("opened", this._onOpened, this).onSync("closed", this._onClosed, this).onAsync("datasetRendered", this._onDatasetRendered, this);
             this.input = new Input({
                 input: $input,
-                hint: $hint
+                hint: $hint,
+                triggerCharacter: o.triggerCharacter,
+                triggerRegex: o.triggerRegex
             }).onSync("focused", this._onFocused, this).onSync("blurred", this._onBlurred, this).onSync("enterKeyed", this._onEnterKeyed, this).onSync("tabKeyed", this._onTabKeyed, this).onSync("escKeyed", this._onEscKeyed, this).onSync("upKeyed", this._onUpKeyed, this).onSync("downKeyed", this._onDownKeyed, this).onSync("leftKeyed", this._onLeftKeyed, this).onSync("rightKeyed", this._onRightKeyed, this).onSync("queryChanged", this._onQueryChanged, this).onSync("whitespaceChanged", this._onWhitespaceChanged, this);
             this._setLanguageDirection();
         }
@@ -1525,15 +1607,23 @@
                 }
             },
             _updateHint: function updateHint() {
-                var datum, val, query, escapedQuery, frontMatchRegEx, match;
+                var datum, val, query, escapedQuery, frontMatchRegEx, match, parsedVal, frontVal, endVal;
                 datum = this.dropdown.getDatumForTopSuggestion();
                 if (datum && this.dropdown.isVisible() && !this.input.hasOverflow()) {
                     val = this.input.getInputValue();
+                    parsedVal = this.input._parseInputForTrigger();
+                    endVal = "";
+                    frontVal = datum.value;
+                    if (parsedVal) {
+                        val = parsedVal.pre + parsedVal.trigger + parsedVal.completion;
+                        frontVal = parsedVal.pre + parsedVal.trigger + datum.value;
+                        endVal = parsedVal.post;
+                    }
                     query = Input.normalizeQuery(val);
                     escapedQuery = _.escapeRegExChars(query);
                     frontMatchRegEx = new RegExp("^(?:" + escapedQuery + ")(.+$)", "i");
-                    match = frontMatchRegEx.exec(datum.value);
-                    match ? this.input.setHint(val + match[1]) : this.input.clearHint();
+                    match = frontMatchRegEx.exec(frontVal);
+                    match && !endVal ? this.input.setHint(val + match[1]) : this.input.clearHint();
                 } else {
                     this.input.clearHint();
                 }
@@ -1651,6 +1741,8 @@
                         withHint: _.isUndefined(o.hint) ? true : !!o.hint,
                         minLength: o.minLength,
                         autoselect: o.autoselect,
+                        triggerCharacter: o.triggerCharacter,
+                        triggerRegex: o.triggerRegex,
                         datasets: datasets
                     });
                     $input.data(typeaheadKey, typeahead);

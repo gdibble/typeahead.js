@@ -377,6 +377,7 @@
                 });
             }
             this.query = this.$input.val();
+            this.savedPlaceholder = this.$input.attr("placeholder");
             this.$overflowHelper = buildOverflowHelper(this.$input);
         }
         Input.normalizeQuery = function(str) {
@@ -502,6 +503,12 @@
                 }
                 return true;
             },
+            showPlaceholder: function() {
+                this.$input.attr("placeholder", this.savedPlaceholder);
+            },
+            hidePlaceholder: function() {
+                this.$input.attr("placeholder", "");
+            },
             destroy: function destroy() {
                 this.$hint.off(".tt");
                 this.$input.off(".tt");
@@ -546,6 +553,7 @@
             }
             this.query = null;
             this.highlight = !!o.highlight;
+            this.showDefault = o.showDefault;
             this.name = o.name || _.getUniqueId();
             this.source = o.source;
             this.displayFn = getDisplayFn(o.display || o.displayKey);
@@ -622,7 +630,7 @@
                 this.canceled = false;
                 this.source(query, render);
                 function render(suggestions) {
-                    if (!that.canceled && query === that.query) {
+                    if (!that.canceled && query === that.query || that.showDefault && query === "") {
                         that._render(query, suggestions);
                     }
                 }
@@ -834,7 +842,7 @@
             }
             this.isActivated = false;
             this.autoselect = !!o.autoselect;
-            this.minLength = _.isNumber(o.minLength) ? o.minLength : 1;
+            this.minLength = o.minLength;
             this.$node = buildDomStructure(o.input, o.withHint);
             $menu = this.$node.find(".tt-dropdown-menu");
             $input = this.$node.find(".tt-input");
@@ -888,15 +896,27 @@
                 this._updateHint();
             },
             _onOpened: function onOpened() {
+                if (this.minLength === 0 && this.input.getQuery() === "") {
+                    this.dropdown.update("");
+                }
                 this._updateHint();
                 this.eventBus.trigger("opened");
             },
             _onClosed: function onClosed() {
                 this.input.clearHint();
+                this.input.showPlaceholder();
                 this.eventBus.trigger("closed");
             },
             _onFocused: function onFocused() {
+                var query;
                 this.isActivated = true;
+                this.dropdown.empty();
+                if (this.minLength === 0) {
+                    query = this.input.getQuery();
+                    this.input.clearHint();
+                    this.dropdown.update(query);
+                    this._setLanguageDirection();
+                }
                 this.dropdown.open();
             },
             _onBlurred: function onBlurred() {
@@ -947,6 +967,7 @@
             },
             _onQueryChanged: function onQueryChanged(e, query) {
                 this.input.clearHintIfInvalid();
+                this.input.showPlaceholder();
                 query.length >= this.minLength ? this.dropdown.update(query) : this.dropdown.empty();
                 this.dropdown.open();
                 this._setLanguageDirection();
@@ -975,6 +996,8 @@
                     match ? this.input.setHint(val + match[1]) : this.input.clearHint();
                 } else {
                     this.input.clearHint();
+                    this.input.hidePlaceholder();
+                    this.input.setHint(val + (match ? match[1] : ""));
                 }
             },
             _autocomplete: function autocomplete(laxCursor) {
@@ -1078,9 +1101,10 @@
                 o = o || {};
                 return this.each(attach);
                 function attach() {
-                    var $input = $(this), eventBus, typeahead;
+                    var $input = $(this), minLength = _.isNumber(o.minLength) ? o.minLength : 1, eventBus, typeahead;
                     _.each(datasets, function(d) {
                         d.highlight = !!o.highlight;
+                        d.showDefault = minLength === 0;
                     });
                     typeahead = new Typeahead({
                         input: $input,
@@ -1088,7 +1112,7 @@
                             el: $input
                         }),
                         withHint: _.isUndefined(o.hint) ? true : !!o.hint,
-                        minLength: o.minLength,
+                        minLength: minLength,
                         autoselect: o.autoselect,
                         datasets: datasets
                     });

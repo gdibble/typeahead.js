@@ -994,10 +994,12 @@
                     frontMatchRegEx = new RegExp("^(?:" + escapedQuery + ")(.+$)", "i");
                     match = frontMatchRegEx.exec(datum.value);
                     match ? this.input.setHint(val + match[1]) : this.input.clearHint();
-                } else {
-                    this.input.clearHint();
+                } else if (val) {
                     this.input.hidePlaceholder();
                     this.input.setHint(val + (match ? match[1] : ""));
+                } else {
+                    this.input.showPlaceholder();
+                    this.input.clearHint();
                 }
             },
             _autocomplete: function autocomplete(laxCursor) {

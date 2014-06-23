@@ -257,10 +257,13 @@ var Typeahead = (function() {
         // clear hint if there's no trailing text
         match ? this.input.setHint(val + match[1]) : this.input.clearHint();
       }
+      else if (val) {
+          this.input.hidePlaceholder();
+          this.input.setHint(val + (match ? match[1] : ""));
+      }
       else {
-        this.input.clearHint();
-        this.input.hidePlaceholder();
-        this.input.setHint(val + (match ? match[1] : ''));
+          this.input.showPlaceholder();
+          this.input.clearHint();
       }
     },
 

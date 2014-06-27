@@ -244,22 +244,27 @@ var Typeahead = (function() {
       var datum, val, query, escapedQuery, frontMatchRegEx, match;
 
       datum = this.dropdown.getDatumForTopSuggestion();
+      val = this.input.getInputValue();
+      query = Input.normalizeQuery(val);
+      escapedQuery = _.escapeRegExChars(query);
+
+      // match input value, then capture trailing text
+      frontMatchRegEx = new RegExp('^(?:' + escapedQuery + ')(.+$)', 'i');
+      match = datum ? frontMatchRegEx.exec(datum.value) : false;
 
       if (datum && this.dropdown.isVisible() && !this.input.hasOverflow()) {
-        val = this.input.getInputValue();
-        query = Input.normalizeQuery(val);
-        escapedQuery = _.escapeRegExChars(query);
-
-        // match input value, then capture trailing text
-        frontMatchRegEx = new RegExp('^(?:' + escapedQuery + ')(.+$)', 'i');
-        match = frontMatchRegEx.exec(datum.value);
-
-        // clear hint if there's no trailing text
-        match ? this.input.setHint(val + match[1]) : this.input.clearHint();
+          if (match) {
+              this.input.hidePlaceholder();
+              this.input.setHint(val + match[1]);
+          }
+          else {
+              this.input.showPlaceholder();
+              this.input.clearHint();
+          }
       }
       else if (val) {
           this.input.hidePlaceholder();
-          this.input.setHint(val + (match ? match[1] : ""));
+          this.input.setHint(val + (match ? match[1] : ''));
       }
       else {
           this.input.showPlaceholder();

@@ -161,10 +161,9 @@
         matches = this.index.all();
       } else {
         matches = this.index.get(query);
-
-        if (matches.length < this.limit && this.transport) {
-          cacheHit = this._getFromRemote(query, returnRemoteMatches);
-        }
+      }
+      if (matches.length < this.limit && this.transport) {
+        cacheHit = this._getFromRemote(query, returnRemoteMatches);
       }
       matches = this.sorter(matches).slice(0, this.limit);
 

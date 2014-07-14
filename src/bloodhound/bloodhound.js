@@ -162,7 +162,7 @@
       } else {
         matches = this.index.get(query);
       }
-      if (matches.length < this.limit && this.transport) {
+      if (matches.length < this.limit && this.transport && (!this.local || (this.local && !this.local.length))) {
         cacheHit = this._getFromRemote(query, returnRemoteMatches);
       }
       matches = this.sorter(matches).slice(0, this.limit);
